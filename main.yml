@@ -1,0 +1,122 @@
+---
+- hosts: webkul # hosts to be configured
+  sudo: yes # sudo permissions
+  handlers:
+    - name: restart apache2
+      service: name=apache2 state=restarted
+ 
+  tasks:
+  	- name: update
+      apt: update_cache=yes
+      only_if: "'$ansible_pkg_mgr' == 'apt'"
+	
+	- name: add certbot repo
+      apt_repository: 
+		repo: "{{ item }}"
+		state: present 
+		update_cache: yes
+	  with_items:	
+		- universe
+		- 'ppa:certbot/certbot'
+      only_if: "'$ansible_pkg_mgr' == 'apt'"
+	  
+	- name: install apache2
+	  apt: 
+		name: "{{ item }}" 
+		update_cache: yes 
+		state: present
+	  with_items:
+		- apache2
+		- software-properties-common
+		- certbot 
+		- python-certbot-apache
+
+	  only_if: "'$ansible_pkg_mgr' == 'apt'"
+	  register: apache_installed 
+	  
+	- name: enabled mod_rewrite
+      apache2_module: name=rewrite state=present
+	  when: apache_installed.changed
+	  
+	- name: copy config file for VirtualHosts with ports 80 8080
+	  copy:
+	    src: ./example_host.conf
+        dest: /etc/apache2/sites-available/example_host.conf
+	  when: apache_installed.changed	
+	  notify:
+        - restart apache2
+	
+    - name: update
+      apt: update_cache=yes
+      only_if: "'$ansible_pkg_mgr' == 'apt'"
+	
+	- name: add certbot repo
+      apt_repository: 
+		repo: "{{ item }}"
+		state: present 
+		update_cache: yes
+	  with_items:	
+		- universe
+		- 'ppa:certbot/certbot'
+      only_if: "'$ansible_pkg_mgr' == 'apt'"
+	  
+	- name: install apache2
+	  apt: 
+		name: "{{ item }}" 
+		update_cache: yes 
+		state: present
+	  with_items:
+		- apache2
+		- software-properties-common
+		- certbot 
+		- python-certbot-apache
+
+	  only_if: "'$ansible_pkg_mgr' == 'apt'"
+	  register: apache_installed 
+	  
+	- name: enabled mod_rewrite
+      apache2_module: name=rewrite state=present
+	  when: apache_installed.changed
+	  
+	- name: copy config file for VirtualHosts with ports 80, 8080
+	  copy:
+	    src: ./example_host.conf
+        dest: /etc/apache2/sites-available/example_host.conf
+	  when: apache_installed.changed	
+	  notify:
+        - restart apache2
+        
+	- debug: msg="apache has been installed"
+	
+	- name: update
+      yum: update_cache=yes
+      only_if: "'$ansible_pkg_mgr' == 'yum'" 
+   
+    - name: install apache2
+	  yum: name=apache2 update_cache=yes state=present
+	  only_if: "'$ansible_pkg_mgr' == 'yum'"
+	  
+	- name: enabled mod_rewrite
+      apache2_module: name=rewrite state=present  
+	  notify:
+        - restart apache2
+	- debug: msg="apache has been installed"	
+	
+	- import_playbook: include-vars.yml
+
+    - import_playbook: install-with-package.yml
+      when: not certbot_install_from_source
+    
+    - import_playbook: install-from-source.yml
+      when: certbot_install_from_source
+    
+    - import_playbook: create-cert-standalone.yml
+      with_items: "{{ certbot_certs }}"
+      when:
+        - certbot_create_if_missing
+        - certbot_create_method == 'standalone'
+      loop_control:
+        loop_var: cert_item
+    
+    - import_playbook: renew-cron.yml
+      when: certbot_auto_renew
